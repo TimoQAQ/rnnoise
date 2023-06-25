@@ -16,7 +16,8 @@ noinst_HEADERS = src/arch.h  \
 		 src/pitch.h  \
 		 src/rnn_data.h  \
 		 src/rnn.h  \
-		 src/tansig_table.h
+		 src/tansig_table.h \
+		 src/rbuf.h
 
 librnnoise_la_SOURCES = \
 	src/denoise.c \
@@ -25,7 +26,8 @@ librnnoise_la_SOURCES = \
 	src/rnn_reader.c \
 	src/pitch.c \
 	src/kiss_fft.c \
-	src/celt_lpc.c
+	src/celt_lpc.c \
+	src/rbuf.c
 
 librnnoise_la_LIBADD = $(DEPS_LIBS) $(lrintf_lib) $(LIBM)
 librnnoise_la_LDFLAGS = -no-undefined \

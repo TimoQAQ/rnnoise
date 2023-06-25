@@ -38,11 +38,15 @@
 #include "rnnoise.h"
 #include "pitch.h"
 #include "arch.h"
+#include "rbuf.h"
 #include "rnn.h"
 #include "rnn_data.h"
 
 #define FRAME_SIZE_SHIFT 2
 #define FRAME_SIZE (120<<FRAME_SIZE_SHIFT)
+#define FRAME_BYTE FRAME_SIZE * 2
+#define REAL_FRAME_SIZE 1024
+#define REAL_FRAME_BYTE REAL_FRAME_SIZE * 2
 #define WINDOW_SIZE (2*FRAME_SIZE)
 #define FREQ_SIZE (FRAME_SIZE + 1)
 
@@ -162,8 +166,9 @@ void interp_band_gain(float *g, const float *bandE) {
   }
 }
 
-
+int rate;
 CommonState common;
+rbuf_t  *m_rbuf_in, *m_rbuf_out;
 
 static void check_init() {
   int i;
@@ -275,12 +280,21 @@ int rnnoise_init(DenoiseState *st, RNNModel *model) {
 
 DenoiseState *rnnoise_create(RNNModel *model) {
   DenoiseState *st;
+  rate = round(REAL_FRAME_SIZE / FRAME_SIZE + 0.999999);
   st = malloc(rnnoise_get_size());
+  m_rbuf_in = rbuf_create(REAL_FRAME_SIZE * 6);
+  m_rbuf_out = rbuf_create(REAL_FRAME_SIZE * 6);
+  if (m_rbuf_in == NULL || m_rbuf_out == NULL)
+  {
+    return NULL;
+  }
   rnnoise_init(st, model);
   return st;
 }
 
 void rnnoise_destroy(DenoiseState *st) {
+  if (m_rbuf_in) rbuf_destroy(m_rbuf_in);
+  if (m_rbuf_out) rbuf_destroy(m_rbuf_out);
   free(st->rnn.vad_gru_state);
   free(st->rnn.noise_gru_state);
   free(st->rnn.denoise_gru_state);
@@ -455,7 +469,7 @@ void pitch_filter(kiss_fft_cpx *X, const kiss_fft_cpx *P, const float *Ex, const
   }
 }
 
-float rnnoise_process_frame(DenoiseState *st, float *out, const float *in) {
+float rnnoise_process_frame_fix(DenoiseState *st, float *out, const float *in) {
   int i;
   kiss_fft_cpx X[FREQ_SIZE];
   kiss_fft_cpx P[WINDOW_SIZE];
@@ -491,6 +505,53 @@ float rnnoise_process_frame(DenoiseState *st, float *out, const float *in) {
 
   frame_synthesis(st, out, X);
   return vad_prob;
+}
+
+int rnnoise_process_frame(DenoiseState *st, void *out, const void *in)
+{
+  int i, k;
+  float float_buf[FRAME_SIZE];
+  short short_buf[FRAME_SIZE];
+
+  if (st == NULL || in == NULL || out == NULL)
+  {
+    return 0;
+  }
+
+  rbuf_write(m_rbuf_in, (u_char *)in, REAL_FRAME_BYTE);
+
+  if (rbuf_used(m_rbuf_in) >= FRAME_BYTE * rate)
+  {
+    for (k = 0; k < rate; k++)
+    {
+      rbuf_read(m_rbuf_in, (u_char *)short_buf, FRAME_BYTE);
+
+      for (i = 0; i < FRAME_SIZE; i++)
+      {
+        float_buf[i] = short_buf[i];
+      }
+
+      rnnoise_process_frame_fix(st, float_buf, float_buf);
+
+      for (i = 0; i < FRAME_SIZE; i++)
+      {
+        short_buf[i] = float_buf[i];
+      }
+
+      rbuf_write(m_rbuf_out, (u_char *)short_buf, FRAME_BYTE);
+    }
+  }
+
+  if (rbuf_used(m_rbuf_out) >= REAL_FRAME_BYTE)
+  {
+    rbuf_read(m_rbuf_out, (u_char *)out, REAL_FRAME_BYTE);
+  }
+  else
+  {
+    return 0;
+  }
+
+  return REAL_FRAME_SIZE;
 }
 
 #if TRAINING

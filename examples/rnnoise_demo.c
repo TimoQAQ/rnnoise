@@ -28,7 +28,7 @@
 #include <stdio.h>
 #include "rnnoise.h"
 
-#define FRAME_SIZE 480
+#define FRAME_SIZE 1024
 
 int main(int argc, char **argv) {
   int i;
@@ -47,9 +47,7 @@ int main(int argc, char **argv) {
     short tmp[FRAME_SIZE];
     fread(tmp, sizeof(short), FRAME_SIZE, f1);
     if (feof(f1)) break;
-    for (i=0;i<FRAME_SIZE;i++) x[i] = tmp[i];
-    rnnoise_process_frame(st, x, x);
-    for (i=0;i<FRAME_SIZE;i++) tmp[i] = x[i];
+    rnnoise_process_frame(st, tmp, tmp);
     if (!first) fwrite(tmp, sizeof(short), FRAME_SIZE, fout);
     first = 0;
   }
