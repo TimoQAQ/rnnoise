@@ -166,7 +166,6 @@ void interp_band_gain(float *g, const float *bandE) {
   }
 }
 
-int rate;
 CommonState common;
 rbuf_t  *m_rbuf_in, *m_rbuf_out;
 
@@ -280,10 +279,9 @@ int rnnoise_init(DenoiseState *st, RNNModel *model) {
 
 DenoiseState *rnnoise_create(RNNModel *model) {
   DenoiseState *st;
-  rate = round(REAL_FRAME_SIZE / FRAME_SIZE + 0.999999);
   st = malloc(rnnoise_get_size());
-  m_rbuf_in = rbuf_create(REAL_FRAME_SIZE * 6);
-  m_rbuf_out = rbuf_create(REAL_FRAME_SIZE * 6);
+  m_rbuf_in = rbuf_create(REAL_FRAME_SIZE * 10);
+  m_rbuf_out = rbuf_create(REAL_FRAME_SIZE * 10);
   if (m_rbuf_in == NULL || m_rbuf_out == NULL)
   {
     return NULL;
@@ -509,7 +507,7 @@ float rnnoise_process_frame_fix(DenoiseState *st, float *out, const float *in) {
 
 int rnnoise_process_frame(DenoiseState *st, void *out, const void *in)
 {
-  int i, k;
+  int i;
   float float_buf[FRAME_SIZE];
   short short_buf[FRAME_SIZE];
 
@@ -520,26 +518,23 @@ int rnnoise_process_frame(DenoiseState *st, void *out, const void *in)
 
   rbuf_write(m_rbuf_in, (u_char *)in, REAL_FRAME_BYTE);
 
-  if (rbuf_used(m_rbuf_in) >= FRAME_BYTE * rate)
+  while (rbuf_used(m_rbuf_in) >= FRAME_BYTE && rbuf_available(m_rbuf_out) >= FRAME_BYTE)
   {
-    for (k = 0; k < rate; k++)
+    rbuf_read(m_rbuf_in, (u_char *)short_buf, FRAME_BYTE);
+
+    for (i = 0; i < FRAME_SIZE; i++)
     {
-      rbuf_read(m_rbuf_in, (u_char *)short_buf, FRAME_BYTE);
-
-      for (i = 0; i < FRAME_SIZE; i++)
-      {
-        float_buf[i] = short_buf[i];
-      }
-
-      rnnoise_process_frame_fix(st, float_buf, float_buf);
-
-      for (i = 0; i < FRAME_SIZE; i++)
-      {
-        short_buf[i] = float_buf[i];
-      }
-
-      rbuf_write(m_rbuf_out, (u_char *)short_buf, FRAME_BYTE);
+      float_buf[i] = short_buf[i];
     }
+
+    rnnoise_process_frame_fix(st, float_buf, float_buf);
+
+    for (i = 0; i < FRAME_SIZE; i++)
+    {
+      short_buf[i] = float_buf[i];
+    }
+
+    rbuf_write(m_rbuf_out, (u_char *)short_buf, FRAME_BYTE);
   }
 
   if (rbuf_used(m_rbuf_out) >= REAL_FRAME_BYTE)
